@@ -2,13 +2,12 @@ package com.bitrock
 
 class BankAccountSpec extends BaseSpec {
 
-
   "Bank account" when {
 
     "created" should {
 
       "have initial balance zero" in {
-        val account = new Account()
+        val account = Account.open
         account.balance shouldBe Balance(0)
       }
 
@@ -17,10 +16,15 @@ class BankAccountSpec extends BaseSpec {
     "make a deposit" should {
 
       "return the new balance" in {
-        val account = new Account()
-        account.deposit(Deposit(10))
-        account.deposit(Deposit(15))
-        account.balance shouldBe Balance(25)
+        val account = Account.open
+
+        val finalBalance = (for {
+          account1 <- account.deposit(deposit(value = 10))
+          account2 <- account1.deposit(deposit(value = 10))
+        } yield account2).value.balance
+
+        finalBalance shouldBe Balance(20)
+
       }
     }
 
@@ -31,24 +35,25 @@ class BankAccountSpec extends BaseSpec {
     "make a withdrawal on empty account" should {
 
       "return an NoSufficientBalance" in {
-        val account = new Account()
-        account.withdraw(Withdrawal(10)) shouldBe Left(Error("Insufficient balance: 0"))
+        val account = Account.open
+        account.withdraw(withdrawal(value = 10)) shouldBe Left(Error("Insufficient balance: 0"))
       }
     }
 
-    "make a withdrawal on smaller than balance" should {
+    "make a withdrawal smaller than balance" should {
 
       "return the new balance" in {
 
-        val account = new Account()
+        val account = Account.open
 
-        for {
-          _ <- account.deposit(Deposit(10))
-          _ <- account.deposit(Deposit(15))
-          _ <- account.withdraw(Withdrawal(7))
-        } yield ()
+        val finalBalance = (for {
+          account1 <- account.deposit(deposit(value = 10))
+          account2 <- account1.deposit(deposit(value = 15))
+          account3 <- account2.withdraw(withdrawal(value = 7))
+        } yield account3).value.balance
 
-        account.balance shouldBe Balance(18)
+        finalBalance shouldBe Balance(18)
+
       }
     }
 
@@ -58,73 +63,38 @@ class BankAccountSpec extends BaseSpec {
 
     "allow money transfer with sufficient balance" in {
 
-      val account1 = new Account()
-      val account2 = new Account()
+      val account1 = Account.open
+      val account2 = Account.open
 
-      account1.deposit(Deposit(17))
-      account1.transfer(account2, Transfer(10))
+      val (account11, account22) = (for {
+        account11 <- account1.deposit(deposit(value = 17))
+        accounts  <- account11.transfer(Transfer("date", account2, 10))
+      } yield (accounts._1, accounts._2)).value
 
-      account2.balance shouldBe Balance(10)
-      account1.balance shouldBe Balance(7)
+      account22.balance shouldBe Balance(10)
+      account11.balance shouldBe Balance(7)
 
     }
 
     "not allow money transfer with insufficient balance" in {
 
-      val account1 = new Account()
-      val account2 = new Account()
+      val account1 = Account.open
+      val account2 = Account.open
 
-      account1.deposit(Deposit(17))
-      val result = account1.transfer(account2, Transfer(120))
+      val result = for {
+        transfer <- account1.transfer(Transfer("date", account2, 120))
+      } yield transfer
 
-      result shouldBe Left(Error("Insufficient balance: 17"))
+      result shouldBe Left(Error("Insufficient balance: 0"))
+
+      account1.balance shouldBe Balance(0)
       account2.balance shouldBe Balance(0)
-      account1.balance shouldBe Balance(17)
 
     }
 
   }
 
+  def deposit(value: Long, date: String = "date"): Deposit       = Deposit(date, value)
+  def withdrawal(value: Long, date: String = "date"): Withdrawal = Withdrawal(date, value)
 
 }
-
-case class Deposit(amount: Long)
-
-case class Balance(value: Long)
-
-case class Withdrawal(value: Long)
-
-case class Transfer(value: Long)
-
-case class Error(message: String)
-
-class Account() {
-
-  var balance: Balance = Balance(0)
-
-  def transfer(account2: Account, transfer: Transfer): Either[Error, Unit] = {
-    for {
-      _ <- withdraw(Withdrawal(transfer.value))
-      _ <- account2.deposit(Deposit(transfer.value))
-    } yield ()
-  }
-
-  def withdraw(value: Withdrawal): Either[Error, Unit] = {
-    val newBalance = balance.value - value.value
-    newBalance match {
-      case value if value < 0 => Left(Error(s"Insufficient balance: ${balance.value}"))
-      case _ =>
-        balance = Balance(newBalance)
-        Right(())
-    }
-  }
-
-  def deposit(deposit: Deposit): Either[Error, Unit] = {
-    balance = balance.copy(value = balance.value + deposit.amount)
-    Right(())
-  }
-
-
-}
-
-
