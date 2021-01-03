@@ -91,10 +91,67 @@ class BankAccountSpec extends BaseSpec {
       account2.balance shouldBe Balance(0)
 
     }
+  }
 
+  "Bank Account" when {
+    "is empty" should {
+
+      "print only the header" in {
+        val account = Account.open
+        account.statement shouldBe Statement("""
+            |date       || credit || debit || balance
+            |
+            |""".stripMargin)
+      }
+
+      "print account with one deposit" in {
+        val account    = Account.open
+        val newAccount = account.deposit(deposit(123, "24/10/1980")).value
+        newAccount.statement shouldBe Statement(
+          """
+            |date       || credit || debit || balance
+            |24/10/1980 || 123    ||       || 123
+            |""".stripMargin
+        )
+      }
+
+      "print account with two deposit" in {
+        val account = Account.open
+
+        val newAccount = (for {
+          newAccount   <- account.deposit(deposit(123, "24/10/1980"))
+          finalAccount <- newAccount.deposit(deposit(234, "25/10/1980"))
+        } yield finalAccount).value
+
+        newAccount.statement shouldBe Statement(
+          """
+            |date       || credit || debit || balance
+            |25/10/1980 || 234    ||       || 357
+            |24/10/1980 || 123    ||       || 123
+            |""".stripMargin
+        )
+      }
+
+      "print account with one deposit and one withdrawal" in {
+        val account = Account.open
+
+        val newAccount = (for {
+          newAccount   <- account.deposit(deposit(123, "24/10/1980"))
+          finalAccount <- newAccount.withdraw(withdrawal(23, "25/10/1980"))
+        } yield finalAccount).value
+
+        newAccount.statement shouldBe Statement(
+          """
+            |date       || credit || debit || balance
+            |25/10/1980 ||        || 23    || 100
+            |24/10/1980 || 123    ||       || 123
+            |""".stripMargin
+        )
+      }
+
+    }
   }
 
   def deposit(value: Long, date: String = "date"): Deposit       = Deposit(date, value)
   def withdrawal(value: Long, date: String = "date"): Withdrawal = Withdrawal(date, value)
-
 }

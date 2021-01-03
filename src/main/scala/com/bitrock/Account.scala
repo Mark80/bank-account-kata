@@ -5,9 +5,38 @@ sealed trait Movement {
   def date: String
 }
 
-case class Deposit(date: String, amount: Long)                          extends Movement
-case class Withdrawal(date: String, amount: Long)                       extends Movement
-case class Transfer(date: String, targetAccount: Account, amount: Long) extends Movement
+case class Deposit(date: String, amount: Long)    extends Movement
+case class Withdrawal(date: String, amount: Long) extends Movement
+case class Transfer(date: String, targetAccount: Account, amount: Long)
+case class Statement(st: String)
+object Statement {
+
+  def build(movements: List[Movement]): Statement = {
+    val (statementRows, _) = movements.reverse.foldLeft((List.empty[StatementRow], Balance.Zero)) {
+      case ((statementRows, previousBalance), movement) =>
+        val currentBalance = previousBalance + movement
+        (StatementRow(movement, currentBalance.value) :: statementRows, currentBalance)
+    }
+    Statement(s"""
+                 |date       || credit || debit || balance
+                 |${statementRows.map(_.row).mkString("\n")}
+                 |""".stripMargin)
+  }
+}
+
+case class StatementRow(row: String)
+
+object StatementRow {
+
+  def apply(mov: Movement, currentBalance: Long): StatementRow = mov match {
+    case Deposit(date, amount) =>
+      StatementRow(date + " || " + amount + "    ||       || " + currentBalance)
+    case Withdrawal(date, amount) =>
+      StatementRow(date + " ||        || " + amount + "    || " + currentBalance)
+
+  }
+
+}
 
 case class Balance(value: Long) {
 
@@ -31,7 +60,7 @@ case class MovementsLog(movements: List[Movement]) {
 }
 
 object MovementsLog {
-  def withNoMovements(): MovementsLog =
+  def empty(): MovementsLog =
     MovementsLog(Nil)
 }
 
@@ -39,12 +68,13 @@ case class Account(movementsLog: MovementsLog) {
 
   type OperationResult[T] = Either[Error, T]
 
-  def balance: Balance = {
-    val movements = movementsLog.movements
+  lazy val balance: Balance =
+    sumAllMovements(movementsLog.movements)
+
+  private def sumAllMovements(movements: List[Movement]): Balance =
     movements.foldLeft(Balance.Zero) { (balance, movement) =>
       balance + movement
     }
-  }
 
   def transfer(transfer: Transfer): OperationResult[(Account, Account)] = {
     import transfer.targetAccount
@@ -70,10 +100,13 @@ case class Account(movementsLog: MovementsLog) {
 
   private def addMovement(movement: Movement): OperationResult[Account] =
     Right(Account(movementsLog.addMovement(movement)))
+
+  lazy val statement: Statement = Statement.build(movementsLog.movements)
+
 }
 
 object Account {
 
-  def open: Account = Account(MovementsLog.withNoMovements())
+  def open: Account = Account(MovementsLog.empty())
 
 }
